@@ -1,0 +1,48 @@
+# Worker Dockerfile - No web framework, smaller image.
+# Used for background ingestion jobs.
+
+
+# =============================================================================
+# Builder Stage
+# =============================================================================
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+COPY pyproject.toml uv.lock* ./
+
+# Install only worker dependencies (no fastapi, uvicorn)
+RUN uv sync --frozen --no-dev --extra worker
+
+
+# =============================================================================
+# Production Stage
+# =============================================================================
+FROM python:3.12-slim AS production
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/.venv /app/.venv
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY --chown=appuser:appuser app ./app
+COPY --chown=appuser:appuser alembic ./alembic
+COPY --chown=appuser:appuser alembic.ini ./
+
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Default: run the ingestion scheduler
+CMD ["python", "-m", "app.ingestion.freehire.scheduler"]

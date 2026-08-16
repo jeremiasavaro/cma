@@ -1,0 +1,106 @@
+# Docker Compose for local development.
+
+# Services:
+# - db: PostgreSQL with pgvector
+# - redis: Cache/queue
+# - app: FastAPI with hot reload (development target)
+# - worker: Background ingestion (production target)
+#
+
+version: "3.9"
+
+services:
+  # =============================================================================
+  # PostgreSQL with pgvector extension
+  # =============================================================================
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: career-fit-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_fit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # Redis for caching / future queue
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: career-fit-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # =============================================================================
+  # API Application (Development - Hot Reload)
+  # =============================================================================
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: development
+    container_name: career-fit-api
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/career_fit
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
+    env_file:
+      - ../../.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../app:/app/app          # Hot reload
+      - ../../tests:/app/tests
+      - ../../alembic:/app/alembic
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # =============================================================================
+  # Background Worker (Ingestion)
+  # =============================================================================
+  worker:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.worker
+      target: production
+    container_name: career-fit-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/career_fit
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ../../.env
+    volumes:
+      - ../../app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+    # Runs the scheduler (daily Freehire ingestion)
+    command: python -m app.ingestion.freehire.scheduler
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: career-fit-network
