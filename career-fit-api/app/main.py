@@ -5,6 +5,7 @@ FastAPI application factory with lifespan management, CORS, and routing.
 """
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,16 +19,16 @@ from app.database import close_db, init_db
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
-    
+
     Runs on startup (before yield) and shutdown (after yield).
     """
     settings = get_settings()
-    
+
     # Startup
     await init_db()
-    
+
     yield
-    
+
     # Shutdown
     await close_db()
 
@@ -35,9 +36,9 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
-    
+
     Factory pattern allows creating app with different settings for tests.
-    
+
     Returns:
         FastAPI: Configured application instance
     """

@@ -8,8 +8,8 @@ Provides:
 - Init/close functions for FastAPI lifespan
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -28,24 +28,25 @@ from app.config import get_settings
 class Base(DeclarativeBase):
     """
     Base class for all SQLAlchemy models.
-    
+
     By inheriting from Base, SQLAlchemy knows this is a mappable table.
     """
+
     pass
 
 
 # Global variables (singleton pattern)
-_engine: Optional[AsyncEngine] = None
-_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_engine() -> AsyncEngine:
     """
     Get or create the async engine (singleton).
-    
+
     The engine manages the connection pool to PostgreSQL.
     Created once and reused.
-    
+
     Returns:
         AsyncEngine: Configured database engine
     """
@@ -54,10 +55,10 @@ def get_engine() -> AsyncEngine:
         settings = get_settings()
         _engine = create_async_engine(
             settings.DATABASE_URL,
-            echo=settings.DEBUG,                    # True = logs all SQL
+            echo=settings.DEBUG,  # True = logs all SQL
             pool_size=settings.DATABASE_POOL_SIZE,  # Base connections
             max_overflow=settings.DATABASE_MAX_OVERFLOW,  # Extra under load
-            pool_pre_ping=True,                     # Verify connection before use
+            pool_pre_ping=True,  # Verify connection before use
         )
     return _engine
 
@@ -65,10 +66,10 @@ def get_engine() -> AsyncEngine:
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """
     Get or create the session factory (singleton).
-    
+
     The factory creates new sessions for each request.
     expire_on_commit=False = objects remain accessible after commit.
-    
+
     Returns:
         async_sessionmaker: Async session factory
     """
@@ -88,17 +89,17 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency: provides a session per request.
-    
+
     Usage in routes:
         @router.get("/jobs")
         async def list_jobs(session: AsyncSession = Depends(get_session)):
             ...
-    
+
     Automatically handles:
     - Commit if all OK
     - Rollback if exception
     - Close on finish
-    
+
     Yields:
         AsyncSession: Database session
     """
@@ -117,7 +118,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """
     Initialize database - create all tables.
-    
+
     Called ONCE at app startup (in main.py lifespan).
     Imports all models so SQLAlchemy registers them.
     """
@@ -126,15 +127,16 @@ async def init_db() -> None:
         # Import models HERE to avoid circular imports
         # and ensure they're registered before create_all
         from app.models import (  # noqa: F401
-            job,
+            analysis,
             company,
-            skill,
-            role,
-            salary_observation,
+            job,
             market_snapshot,
             profile,
-            analysis,
+            role,
+            salary_observation,
+            skill,
         )
+
         # Creates tables that don't exist (doesn't drop data)
         await conn.run_sync(Base.metadata.create_all)
 
@@ -142,7 +144,7 @@ async def init_db() -> None:
 async def close_db() -> None:
     """
     Close database connections.
-    
+
     Called on app shutdown (in main.py lifespan).
     Releases the connection pool.
     """
