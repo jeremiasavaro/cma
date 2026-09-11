@@ -7,7 +7,7 @@ Represents a company with its metadata and aggregated information.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -74,9 +74,7 @@ class Company(Base):
     )
 
     # Relationships
-    jobs: Mapped[list["Job"]] = relationship(
-        "Job", back_populates="company", lazy="selectin"
-    )
+    jobs: Mapped[list["Job"]] = relationship("Job", back_populates="company", lazy="selectin")
 
     # Table constraints and indexes
     __table_args__ = (
