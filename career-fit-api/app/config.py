@@ -43,7 +43,6 @@ class Settings(BaseSettings):
     # DATABASE - PostgreSQL with pgvector
     # =========================================================================
     # We use full DATABASE_URL (simpler than separate parts)
-    # Format: postgresql+asyncpg://user:pass@host:port/dbname
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/career_fit"
 
     # Connection pool (asyncpg)

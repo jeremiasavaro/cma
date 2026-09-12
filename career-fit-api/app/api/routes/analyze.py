@@ -22,7 +22,7 @@ async def analyze_cv(
 ):
     """
     Analyze a CV against a target role using market data.
-    
+
     This is the main endpoint. It:
     1. Parses CV to structured profile (LLM)
     2. Normalizes target role
@@ -31,14 +31,14 @@ async def analyze_cv(
     5. Identifies skill gaps
     6. Estimates salary
     7. Finds unlocked opportunities
-    
+
     Args:
         request: CV text + target role + analysis config
         session: Database session
-        
+
     Returns:
         Complete analysis response
-        
+
     Raises:
         HTTPException: If analysis fails
     """
