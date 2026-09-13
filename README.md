@@ -15,10 +15,6 @@ You give it your CV and a target role. It analyzes real job postings and tells y
 
 The analysis comes from **3.3M+ real job postings** across 205K+ companies and 80+ ATS platforms, aggregated by [Freehire](https://freehire.me).
 
-### What It Is NOT
-
-This is not a job board. Freehire already solves job collection and normalization. This API sits on top of that data as an **intelligence layer** — it answers "how do I fit?" instead of "what jobs exist?"
-
 ### Key Design Principle
 
 **LLM only for unstructured text. Statistics for everything else.**
@@ -43,17 +39,17 @@ The LLM (Groq / Llama 3.1) is used exclusively for understanding unstructured da
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     API (FastAPI)                       │
-│               POST /v1/analyze                         │
+│                POST /v1/analyze                         │
 └──────────────┬──────────────────────────┬───────────────┘
                │                          │
     ┌──────────▼──────────┐    ┌──────────▼──────────┐
-    │   LLM Pipeline      │    │  Statistical Engine   │
-    │  (CV → Profile)     │    │  (Scores, Gaps, $)   │
-    │  Groq / Llama 3.1   │    │  scikit-learn, etc.   │
+    │   LLM Pipeline      │    │  Statistical Engine │
+    │  (CV → Profile)     │    │  (Scores, Gaps, $)  │
+    │  Groq / Llama 3.1   │    │  scikit-learn, etc. │
     └──────────┬──────────┘    └──────────┬──────────┘
                │                          │
     ┌──────────▼──────────────────────────▼──────────┐
-    │              PostgreSQL + pgvector              │
+    │              PostgreSQL + pgvector             │
     │   Jobs, Profiles, Skills, Salaries, Snapshots  │
     └──────────────────────┬─────────────────────────┘
                            │
@@ -338,36 +334,6 @@ docker compose -f docker/docker-compose.yml down
 # Reset database (deletes all data)
 docker compose -f docker/docker-compose.yml down -v
 ```
-
-### Adding a new feature
-
-1. Define schemas in `app/api/schemas/` (request + response)
-2. Create route in `app/api/routes/`
-3. Add ORM models in `app/models/` if needed
-4. Implement business logic in `app/services/`
-5. Add data access in `app/repositories/`
-6. Write tests in `tests/`
-7. Run `alembic revision --autogenerate -m "description"` for migrations
-
-## Status
-
-| Component | Status |
-|-----------|--------|
-| Project scaffolding | Done |
-| Configuration (pydantic-settings) | Done |
-| Database (SQLAlchemy async + pgvector) | Done |
-| ORM models | Done |
-| API routes + schemas | Done |
-| Docker setup | Done |
-| Health endpoint | Done |
-| **Analyze endpoint** | **Not implemented** (returns 501) |
-| Services layer | Not implemented |
-| Ingestion worker | Not implemented |
-| ML models | Not implemented |
-| Tests | Not implemented |
-| Alembic migrations | Not created yet |
-
-The foundation is solid. The core intelligence — CV parsing, market analysis, skill matching, salary estimation — needs to be built in the `services/`, `ingestion/`, and `ml/` layers.
 
 ## License
 
