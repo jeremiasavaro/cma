@@ -46,4 +46,4 @@ Thumbs.db
 .kb/
 
 # dev-guide
-dev-guide.md
+dev-guide/*
