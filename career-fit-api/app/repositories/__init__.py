@@ -8,6 +8,7 @@ package to access all repository classes from one place.
 
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.base import BaseRepository
+from app.repositories.company_repo import CompanyRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.profile_repo import ProfileRepository
 from app.repositories.skill_repo import SkillRepository
@@ -15,6 +16,7 @@ from app.repositories.skill_repo import SkillRepository
 __all__ = [
     "AnalysisRepository",
     "BaseRepository",
+    "CompanyRepository",
     "JobRepository",
     "ProfileRepository",
     "SkillRepository",
