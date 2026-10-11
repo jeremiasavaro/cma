@@ -330,7 +330,13 @@ def normalize_job(raw: Any) -> tuple[NormalizedRecord | None, str | None]:
     job = NormalizedJob(
         external_id=external_id,
         title=title,
-        description=raw.get("description") if isinstance(raw.get("description"), str) else None,
+        # Description is deliberately NOT truncated (unlimited Text column; raw
+        # descriptions are wanted) but must be NUL-free: Postgres rejects \x00.
+        description=(
+            raw["description"].replace("\x00", "")
+            if isinstance(raw.get("description"), str)
+            else None
+        ),
         location=location,
         work_mode=_derive_work_mode(raw, location),
         posted_at=_parse_datetime(raw.get("posted_at")) or _parse_datetime(raw.get("created_at")),
