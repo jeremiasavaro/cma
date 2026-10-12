@@ -141,6 +141,25 @@ Si un registro falla, solo ése se deshace; el batch continúa. Evita "un regist
 - Percentiles salariales (p25, p50, p75) por habilidad
 - Percentiles salariales por ubicación
 
+**Ventana de recencia (recency window):**
+
+Cada snapshot es una "foto" del mercado en su fecha. Para que la foto sea
+limpia, **solo cuenta los empleos que la ingestion vio recientemente**: una
+ventana deslizante de 30 días (`DEFAULT_RECENCY_DAYS`) hacia atrás desde la
+fecha del snapshot, basada en la columna `Job.last_seen_at`.
+
+- **Qué es `last_seen_at`:** la última vez que la ingestion vio ese empleo en
+  el API de Freehire. El upserter la refresca en CADA avistamiento (tanto al
+  insertar como al actualizar).
+- **Por qué existe la ventana:** sin ella, cada snapshot contaría TODOS los
+  empleos guardados alguna vez, incluyendo ofertas muertas que ya no existen
+  en el API. Los números crecerían para siempre y la foto estaría sucia.
+- **Cómo funciona:** un empleo cuenta solo si
+  `last_seen_at >= (fecha del snapshot - 30 días)`. El parámetro
+  `recency_days` de `create_snapshot()` permite cambiar la ventana.
+- **Los snapshots viejos no se tocan:** la ventana aplica al momento de crear
+  (o recrear) un snapshot; las filas históricas quedan como estaban.
+
 **Idempotencia:** Una snapshot por día. Re-ejecutar el mismo día = actualiza en lugar de duplicar.
 
 ## Ciclo manual (para testing/debugging)
@@ -177,8 +196,10 @@ Todas las decisiones anteriores están codificadas:
 2. **Client itera empleos** via `iter_jobs(posted_within_days=2)` (últimas 48 horas)
 3. **Normalizer procesa cada** diccionario bruto → `(NormalizedRecord, skip_reason)`
 4. **Upserter persiste** con savepoints: Company → Job → Skills → Salary
+   (y refresca `last_seen_at` de cada empleo visto)
 5. **Stats acumulan** jobs_inserted, jobs_updated, jobs_skipped, skip_reasons
-6. **SnapshotManager crea/actualiza** MarketSnapshot del día
+6. **SnapshotManager crea/actualiza** MarketSnapshot del día, contando solo
+   empleos vistos en los últimos 30 días (ventana de recencia)
 7. **Session.commit()** confirma TODO (o rollback si algo falló)
 8. **Logs** resumen: "Inserted 1234, Updated 567, Skipped 89 (reasons: ...)"
 9. **Loop duerme** hasta mañana a las 3 AM

@@ -13,6 +13,7 @@ commit() — the commit/rollback boundary belongs to whoever owns the session
 import logging
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -127,6 +128,9 @@ class FreehireUpserter:
             "posted_at": record.job.posted_at,
             "source_url": record.job.source_url,
             "raw_data": record.job.raw_data,
+            # Refreshed on EVERY sighting (insert and update) so snapshots can
+            # tell live jobs apart from ones that disappeared from the API.
+            "last_seen_at": datetime.now(UTC),
         }
 
         job = await self.jobs.get_by_external_id(record.job.external_id)

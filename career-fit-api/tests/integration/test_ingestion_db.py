@@ -14,13 +14,13 @@ TEST_POSTGRES_HOST / TEST_POSTGRES_PORT (used to verify the skip path).
 import asyncio
 import os
 import socket
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -372,6 +372,108 @@ async def test_snapshot_aggregates_and_is_idempotent_per_day(db_session: AsyncSe
     assert refreshed.total_jobs == 5
     # Salary percentiles are unchanged: the new job has no observation.
     assert refreshed.salary_p50 == Decimal(130_000)
+
+
+async def _seed_recent_and_stale_jobs(db_session: AsyncSession) -> date:
+    """Upsert one fresh job and one job last seen 60 days ago; returns today.
+
+    The recent job: Acme, python+postgresql, remote, salary median 100k.
+    The stale job: Globex, cobol, Berlin, salary median 200k — everything about
+    it is distinct so each snapshot breakdown can prove it was excluded.
+    """
+    batch = [
+        make_raw_job("freehire_recent", skills=["python"], salary=(100_000, 100_000)),
+        make_raw_job(
+            "freehire_stale",
+            company="Globex",
+            company_slug="globex",
+            skills=["cobol"],
+            location="Berlin, Germany",
+            salary=(200_000, 200_000),
+        ),
+    ]
+    await FreehireUpserter(db_session).upsert_batch(batch)
+    # Age the stale job directly in the DB: ingestion "saw" it 60 days ago.
+    await db_session.execute(
+        update(Job)
+        .where(Job.external_id == "freehire_stale")
+        .values(last_seen_at=datetime.now(UTC) - timedelta(days=60))
+    )
+    return datetime.now(UTC).date()
+
+
+async def test_snapshot_recency_window_excludes_stale_jobs(db_session: AsyncSession) -> None:
+    """A job last seen 60 days ago is excluded from EVERY snapshot aggregate.
+
+    With the default 30-day window only the fresh job counts: totals,
+    skill/location breakdowns and all salary percentiles must reflect the
+    fresh job alone, with no trace of the stale job's skill (cobol),
+    location (Berlin) or salary (200k).
+    """
+    snapshot_day = await _seed_recent_and_stale_jobs(db_session)
+
+    snapshot = await SnapshotManager(db_session).create_snapshot(snapshot_day)
+    await db_session.commit()
+
+    assert snapshot.total_jobs == 1
+    assert snapshot.total_companies == 1
+    assert snapshot.jobs_by_skill == {"python": 1}
+    assert "Berlin, Germany" not in snapshot.jobs_by_location
+    # Only the fresh job's 100k median feeds the percentiles.
+    assert snapshot.salary_p25 == Decimal(100_000)
+    assert snapshot.salary_p50 == Decimal(100_000)
+    assert snapshot.salary_p75 == Decimal(100_000)
+    assert "cobol" not in snapshot.salary_by_skill
+    assert "Berlin, Germany" not in snapshot.salary_by_location
+    assert snapshot.salary_by_skill["python"]["count"] == 1
+
+
+async def test_snapshot_recency_days_parameter_widens_window(db_session: AsyncSession) -> None:
+    """recency_days=90 brings the 60-day-old job back into the snapshot."""
+    snapshot_day = await _seed_recent_and_stale_jobs(db_session)
+
+    snapshot = await SnapshotManager(db_session).create_snapshot(snapshot_day, recency_days=90)
+    await db_session.commit()
+
+    assert snapshot.total_jobs == 2
+    assert snapshot.total_companies == 2
+    assert snapshot.jobs_by_skill == {"python": 1, "cobol": 1}
+    assert snapshot.jobs_by_location["Berlin, Germany"] == 1
+    # Both medians [100k, 200k] feed the percentiles: p50 interpolates to 150k.
+    assert snapshot.salary_p50 == Decimal(150_000)
+    assert snapshot.salary_by_skill["cobol"]["count"] == 1
+    assert snapshot.salary_by_location["Berlin, Germany"]["count"] == 1
+
+
+async def test_reupsert_refreshes_last_seen_at(db_session: AsyncSession) -> None:
+    """Re-seeing an existing job bumps last_seen_at even if nothing changed.
+
+    This is what keeps live jobs inside the recency window: the upserter must
+    refresh the timestamp on EVERY sighting, not only when a field differs.
+    """
+    raw = make_raw_job("freehire_1")
+    await FreehireUpserter(db_session).upsert_batch([raw])
+    await db_session.commit()
+
+    # Pretend the job was last seen 45 days ago (outside the 30-day window).
+    await db_session.execute(
+        update(Job).values(last_seen_at=datetime.now(UTC) - timedelta(days=45))
+    )
+    await db_session.commit()
+
+    # Same identical payload re-ingested: the sighting alone must refresh it.
+    stats = await FreehireUpserter(db_session).upsert_batch([raw])
+    await db_session.commit()
+    assert stats.jobs_updated == 1
+
+    last_seen = await db_session.scalar(select(Job.last_seen_at))
+    assert last_seen is not None
+    assert last_seen >= datetime.now(UTC) - timedelta(minutes=5)
+
+    # And the job counts again in a fresh snapshot.
+    snapshot = await SnapshotManager(db_session).create_snapshot()
+    await db_session.commit()
+    assert snapshot.total_jobs == 1
 
 
 async def test_snapshot_temporal_helpers(db_session: AsyncSession) -> None:

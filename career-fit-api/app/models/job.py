@@ -7,7 +7,7 @@ Represents a single job posting with all its raw data preserved.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,8 @@ class Job(Base):
         work_mode: Work arrangement (remote, hybrid, onsite)
         company_id: Foreign key to Company
         posted_at: When the job was originally posted
+        last_seen_at: Last time ingestion saw this job in the Freehire API —
+            used by market snapshots to count only jobs that are still alive
         source_url: Original job posting URL
         raw_data: Complete original API response (JSONB) for reprocessing
         created_at: When this record was created in our DB
@@ -71,6 +73,15 @@ class Job(Base):
     # Timestamps
     posted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
+    )
+    # Last time ingestion saw this job in the API. The upserter refreshes it on
+    # every sighting; snapshots use it to count only recently-seen (live) jobs.
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+        comment="Last time ingestion saw this job in the Freehire API",
     )
     source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
