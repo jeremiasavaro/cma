@@ -49,6 +49,7 @@ async def run_ingestion_cycle(
     search_params: dict[str, Any] | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     max_jobs: int | None = None,
+    create_snapshot: bool = True,
 ) -> IngestionStats:
     """Run one full ingestion cycle and commit it as a single unit of work.
 
@@ -57,6 +58,8 @@ async def run_ingestion_cycle(
             incremental window (DEFAULT_SEARCH_PARAMS).
         session_factory: Override for tests/CLI; defaults to the app factory.
         max_jobs: Optional cap on jobs pulled this cycle.
+        create_snapshot: When False, skip the daily MarketSnapshot aggregation
+            at the end of the cycle (useful for partial manual runs).
 
     Returns:
         IngestionStats for the cycle.
@@ -69,7 +72,7 @@ async def run_ingestion_cycle(
             upserter = FreehireUpserter(session)
             stats = await upserter.upsert_stream(client.iter_jobs(max_jobs=max_jobs, **params))
 
-            snapshot = await SnapshotManager(session).create_snapshot()
+            snapshot = await SnapshotManager(session).create_snapshot() if create_snapshot else None
             await session.commit()
         except Exception:
             await session.rollback()
@@ -84,7 +87,7 @@ async def run_ingestion_cycle(
         stats.companies_created,
         stats.skills_created,
         stats.salaries_upserted,
-        snapshot.snapshot_date,
+        snapshot.snapshot_date if snapshot is not None else "skipped",
     )
     if stats.skip_reasons:
         logger.info("Skip reasons: %s", stats.skip_reasons)
